@@ -52,3 +52,8 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Planning & Project Management
+milestones.md
+plan.md
+

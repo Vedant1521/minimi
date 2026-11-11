@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from minimi import __version__
+from minimi.agent import ConversationalAgent
 from minimi.config import Config, get_default_config
 
 
@@ -32,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run_interactive(config: Config, console: Console) -> None:
+def run_interactive(config: Config, console: Console, session_id: str | None = None) -> None:
     """Run interactive REPL loop."""
     console.print(
         f"[bold cyan]Minimi AI Agent v{__version__}[/bold cyan] (Model: [yellow]{config.model}[/yellow])"
@@ -43,6 +44,8 @@ def run_interactive(config: Config, console: Console) -> None:
     for warning in warnings:
         console.print(f"[dim yellow]Notice: {warning}[/dim yellow]")
 
+    agent = ConversationalAgent(config=config, session_id=session_id)
+
     while True:
         try:
             prompt = console.input("[bold green]minimi>[/bold green] ").strip()
@@ -52,8 +55,10 @@ def run_interactive(config: Config, console: Console) -> None:
                 console.print("[dim]Goodbye![/dim]")
                 break
 
-            # Placeholder response until Agent loop is wired in Milestone 2
-            console.print(Markdown(f"**Minimi received:** {prompt}"))
+            with console.status("[bold blue]Thinking...[/bold blue]"):
+                response = agent.step(prompt)
+            console.print(Markdown(response))
+            console.print()
         except (KeyboardInterrupt, EOFError):
             console.print("\n[dim]Session closed.[/dim]")
             break
@@ -71,10 +76,12 @@ def main(args: list[str] | None = None) -> int:
     console = Console()
 
     if parsed.query:
-        console.print(Markdown(f"**Query:** {parsed.query}"))
+        agent = ConversationalAgent(config=config, session_id=parsed.session_id)
+        response = agent.step(parsed.query)
+        console.print(Markdown(response))
         return 0
 
-    run_interactive(config, console)
+    run_interactive(config, console, session_id=parsed.session_id)
     return 0
 
 

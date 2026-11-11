@@ -68,6 +68,11 @@ class WebSearchEngine:
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("TVLY_API_KEY")
+        self._cache: dict[tuple[str, int], SearchResponse] = {}
+
+    def clear_cache(self) -> None:
+        """Clear cached search responses."""
+        self._cache.clear()
 
     def _normalize_url(self, url: str) -> str:
         """Normalize URL for deduplication by stripping tracking query params and trailing slashes."""
@@ -85,6 +90,10 @@ class WebSearchEngine:
         clean_query = query.strip()
         if not clean_query:
             return SearchResponse(query=query)
+
+        cache_key = (clean_query.lower(), max_results)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
 
         if not self.api_key:
             return SearchResponse(
@@ -148,8 +157,10 @@ class WebSearchEngine:
             if len(citations) >= max_results:
                 break
 
-        return SearchResponse(
+        result = SearchResponse(
             query=clean_query,
             citations=citations,
             raw_results=raw_items,
         )
+        self._cache[cache_key] = result
+        return result

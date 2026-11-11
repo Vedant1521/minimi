@@ -20,6 +20,45 @@ from minimi.tools import register_default_tools
 
 
 @dataclass
+class AgentEvent:
+    """Base streaming event emitted during agent orchestration."""
+    pass
+
+
+@dataclass
+class TokenDeltaEvent(AgentEvent):
+    """Text chunk delta streamed from LLM."""
+    delta: str
+
+
+@dataclass
+class ToolStartEvent(AgentEvent):
+    """Emitted when agent begins executing a tool."""
+    tool_name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class ToolEndEvent(AgentEvent):
+    """Emitted when tool execution completes."""
+    tool_name: str
+    output: str
+
+
+@dataclass
+class CitationEvent(AgentEvent):
+    """Emitted when grounding citations and sources footer are synthesized."""
+    citations: list[Citation]
+    sources_footer: str
+
+
+@dataclass
+class TurnCompleteEvent(AgentEvent):
+    """Final event emitted when turn completes with full grounded response."""
+    response: str
+
+
+@dataclass
 class ToolDefinition:
     """Tool schema and executable handler."""
     name: str
@@ -411,3 +450,159 @@ class ConversationalAgent:
             timestamp=stream_asst_ts,
             citations=[{"line": line} for line in citation_dicts] if citation_dicts else None,
         )
+
+    def step_stream_events(self, user_input: str) -> Generator[AgentEvent, None, None]:
+        """Execute conversational turn emitting real-time tool, token, and grounding events."""
+        self._init_system_prompt()
+        stream_user_ts = datetime.now(timezone.utc)
+        self.state.messages.append({
+            "role": "user",
+            "content": user_input,
+            "timestamp": stream_user_ts.isoformat(),
+        })
+        self.storage.add_message(
+            conversation_id=self.session_id,
+            role="user",
+            content=user_input,
+            timestamp=stream_user_ts,
+        )
+
+        # Detect temporal queries and inject chronological memory context if available
+        window, mem_context = self.temporal_retriever.retrieve_context(
+            user_input, conversation_id=self.session_id, reference_time=stream_user_ts
+        )
+        if mem_context and "No previous messages" not in mem_context:
+            self.state.messages.append({
+                "role": "system",
+                "content": f"<chronological_memory>\n{mem_context}\n</chronological_memory>",
+            })
+
+        # Detect cross-session recall queries and inject historical context if available
+        if self.recall_engine.is_recall_query(user_input):
+            hist_context = self.recall_engine.recall_and_format(
+                query=user_input,
+                current_session_id=self.session_id,
+                top_k=3,
+                reference_time=stream_user_ts,
+            )
+            if hist_context:
+                self.state.messages.append({
+                    "role": "system",
+                    "content": hist_context,
+                })
+
+        iteration = 0
+        final_response_content = ""
+
+        while iteration < self.state.max_iterations:
+            iteration += 1
+            self.state.iteration_count += 1
+
+            tools_schema = self._get_tools_schema()
+            response = self.llm.complete(
+                messages=self.state.messages,
+                model=self.config.model,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+                tools=tools_schema,
+            )
+
+            if response.tool_calls:
+                asst_tool_msg = {
+                    "role": "assistant",
+                    "content": response.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                        }
+                        for tc in response.tool_calls
+                    ],
+                }
+                self.state.messages.append(asst_tool_msg)
+                self.storage.add_message(
+                    conversation_id=self.session_id,
+                    role="assistant",
+                    content=response.content or "",
+                    tool_calls=asst_tool_msg["tool_calls"],
+                )
+
+                for tc in response.tool_calls:
+                    yield ToolStartEvent(tool_name=tc.name, arguments=tc.arguments)
+                    tool_output = self.execute_tool(tc.name, tc.arguments)
+                    tool_ts = datetime.now(timezone.utc)
+                    yield ToolEndEvent(tool_name=tc.name, output=tool_output)
+
+                    self.state.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": tc.name,
+                        "content": tool_output,
+                    })
+                    self.storage.add_message(
+                        conversation_id=self.session_id,
+                        role="tool",
+                        content=tool_output,
+                        timestamp=tool_ts,
+                        metadata={"tool_name": tc.name, "tool_call_id": tc.id},
+                    )
+                continue
+
+            final_response_content = response.content
+            if final_response_content:
+                yield TokenDeltaEvent(delta=final_response_content)
+
+            grounding_report = EvidenceGrounder.verify_and_format(
+                response_text=final_response_content,
+                available_citations=self.state.active_citations,
+            )
+            final_grounded = grounding_report.grounded_response
+            valid_cits = [
+                c for c in self.state.active_citations
+                if c.index in grounding_report.valid_indices
+            ]
+            if grounding_report.sources_footer:
+                yield CitationEvent(
+                    citations=valid_cits,
+                    sources_footer=grounding_report.sources_footer,
+                )
+
+            citation_dicts = [c.to_citation_line() for c in valid_cits]
+            asst_final_ts = datetime.now(timezone.utc)
+            self.state.messages.append({
+                "role": "assistant",
+                "content": final_grounded,
+                "timestamp": asst_final_ts.isoformat(),
+                "citations": citation_dicts,
+            })
+            self.storage.add_message(
+                conversation_id=self.session_id,
+                role="assistant",
+                content=final_grounded,
+                timestamp=asst_final_ts,
+                citations=[{"line": line} for line in citation_dicts] if citation_dicts else None,
+            )
+            yield TurnCompleteEvent(response=final_grounded)
+            return
+
+        fallback_content = "I reached the maximum reasoning steps for this query."
+        fallback_ts = datetime.now(timezone.utc)
+        self.state.messages.append({
+            "role": "assistant",
+            "content": fallback_content,
+            "timestamp": fallback_ts.isoformat(),
+        })
+        self.storage.add_message(
+            conversation_id=self.session_id,
+            role="assistant",
+            content=fallback_content,
+            timestamp=fallback_ts,
+        )
+        yield TokenDeltaEvent(delta=fallback_content)
+        yield TurnCompleteEvent(response=fallback_content)
+
+    async def step_async(self, user_input: str) -> str:
+        """Asynchronously execute conversational turn via thread pool."""
+        import asyncio
+        return await asyncio.to_thread(self.step, user_input)

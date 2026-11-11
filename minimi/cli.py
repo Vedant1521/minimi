@@ -8,7 +8,13 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from minimi import __version__
-from minimi.agent import ConversationalAgent
+from minimi.agent import (
+    ConversationalAgent,
+    TokenDeltaEvent,
+    ToolStartEvent,
+    CitationEvent,
+    TurnCompleteEvent,
+)
 from minimi.config import Config, get_default_config
 
 
@@ -55,10 +61,15 @@ def run_interactive(config: Config, console: Console, session_id: str | None = N
                 console.print("[dim]Goodbye![/dim]")
                 break
 
-            with console.status("[bold blue]Thinking...[/bold blue]"):
-                response = agent.step(prompt)
-            console.print(Markdown(response))
-            console.print()
+            for event in agent.step_stream_events(prompt):
+                if isinstance(event, ToolStartEvent):
+                    console.print(f"[dim cyan]Executing tool: {event.tool_name}...[/dim cyan]")
+                elif isinstance(event, TokenDeltaEvent):
+                    console.print(event.delta, end="")
+                elif isinstance(event, CitationEvent):
+                    console.print(Markdown(event.sources_footer))
+
+            console.print("\n")
         except (KeyboardInterrupt, EOFError):
             console.print("\n[dim]Session closed.[/dim]")
             break

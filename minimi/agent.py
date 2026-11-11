@@ -11,6 +11,7 @@ import uuid
 from minimi.config import Config, get_default_config
 from minimi.llm import LLMGateway, LLMResponse, ToolCall
 from minimi.prompts import get_system_prompt
+from minimi.tools import register_default_tools
 
 
 @dataclass
@@ -51,6 +52,7 @@ class ConversationalAgent:
         config: Optional[Config] = None,
         session_id: Optional[str] = None,
         llm_gateway: Optional[LLMGateway] = None,
+        auto_register_tools: bool = True,
     ):
         self.config = config or get_default_config()
         self.session_id = session_id or str(uuid.uuid4())
@@ -64,6 +66,8 @@ class ConversationalAgent:
             max_iterations=self.config.max_iterations,
         )
         self._init_system_prompt()
+        if auto_register_tools:
+            register_default_tools(self)
 
     def _init_system_prompt(self) -> None:
         """Initialize or refresh system prompt."""

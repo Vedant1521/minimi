@@ -21,7 +21,7 @@ WEB_SEARCH_SCHEMA = {
 }
 
 
-def create_web_search_handler(search_engine: WebSearchEngine):
+def create_web_search_handler(search_engine: WebSearchEngine, agent: Optional[Any] = None):
     """Factory creating the executable handler for the web_search tool."""
 
     def web_search_handler(query: str, max_results: int = 5) -> str:
@@ -36,6 +36,9 @@ def create_web_search_handler(search_engine: WebSearchEngine):
         if not response.has_results:
             return f"No results found for query: '{query}'."
 
+        if agent and hasattr(agent, "state") and hasattr(agent.state, "active_citations"):
+            agent.state.active_citations.extend(response.citations)
+
         return response.format_for_agent()
 
     return web_search_handler
@@ -44,7 +47,7 @@ def create_web_search_handler(search_engine: WebSearchEngine):
 def register_default_tools(agent: Any, search_engine: Optional[WebSearchEngine] = None) -> None:
     """Register all default agent tools onto a ConversationalAgent instance."""
     engine = search_engine or WebSearchEngine(api_key=agent.config.tvly_api_key)
-    handler = create_web_search_handler(engine)
+    handler = create_web_search_handler(engine, agent=agent)
 
     agent.register_tool(
         name="web_search",

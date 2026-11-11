@@ -9,9 +9,11 @@ from typing import Any, Callable, Dict, Generator, List, Optional
 import uuid
 
 from minimi.config import Config, get_default_config
+from minimi.grounding import EvidenceGrounder
 from minimi.llm import LLMGateway, LLMResponse, ToolCall
 from minimi.prompts import get_system_prompt
 from minimi.recall import CrossSessionRecallEngine
+from minimi.search import Citation
 from minimi.storage import TemporalStorage
 from minimi.temporal import ChronologicalMemoryRetriever, TemporalParser
 from minimi.tools import register_default_tools
@@ -42,6 +44,7 @@ class AgentState:
     """State tracking for an active conversation session."""
     session_id: str
     messages: list[dict[str, Any]] = field(default_factory=list)
+    active_citations: list[Citation] = field(default_factory=list)
     iteration_count: int = 0
     max_iterations: int = 5
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -289,18 +292,29 @@ class ConversationalAgent:
                 continue
 
             # No tool calls; final answer reached
-            final_response_content = response.content
+            grounding_report = EvidenceGrounder.verify_and_format(
+                response_text=response.content,
+                available_citations=self.state.active_citations,
+            )
+            final_response_content = grounding_report.grounded_response
+            citation_dicts = [
+                c.to_citation_line()
+                for c in self.state.active_citations
+                if c.index in grounding_report.valid_indices
+            ]
             asst_final_ts = datetime.now(timezone.utc)
             self.state.messages.append({
                 "role": "assistant",
                 "content": final_response_content,
                 "timestamp": asst_final_ts.isoformat(),
+                "citations": citation_dicts,
             })
             self.storage.add_message(
                 conversation_id=self.session_id,
                 role="assistant",
                 content=final_response_content,
                 timestamp=asst_final_ts,
+                citations=[{"line": line} for line in citation_dicts] if citation_dicts else None,
             )
             break
 
@@ -373,15 +387,27 @@ class ConversationalAgent:
             yield delta
 
         full_content = "".join(accumulated)
+        grounding_report = EvidenceGrounder.verify_and_format(
+            response_text=full_content,
+            available_citations=self.state.active_citations,
+        )
+        final_grounded = grounding_report.grounded_response
+        citation_dicts = [
+            c.to_citation_line()
+            for c in self.state.active_citations
+            if c.index in grounding_report.valid_indices
+        ]
         stream_asst_ts = datetime.now(timezone.utc)
         self.state.messages.append({
             "role": "assistant",
-            "content": full_content,
+            "content": final_grounded,
             "timestamp": stream_asst_ts.isoformat(),
+            "citations": citation_dicts,
         })
         self.storage.add_message(
             conversation_id=self.session_id,
             role="assistant",
-            content=full_content,
+            content=final_grounded,
             timestamp=stream_asst_ts,
+            citations=[{"line": line} for line in citation_dicts] if citation_dicts else None,
         )

@@ -11,6 +11,7 @@ import uuid
 from minimi.config import Config, get_default_config
 from minimi.llm import LLMGateway, LLMResponse, ToolCall
 from minimi.prompts import get_system_prompt
+from minimi.recall import CrossSessionRecallEngine
 from minimi.storage import TemporalStorage
 from minimi.temporal import ChronologicalMemoryRetriever, TemporalParser
 from minimi.tools import register_default_tools
@@ -65,6 +66,7 @@ class ConversationalAgent:
         )
         self.storage = storage or TemporalStorage(db_path=self.config.db_path)
         self.temporal_retriever = ChronologicalMemoryRetriever(storage=self.storage)
+        self.recall_engine = CrossSessionRecallEngine(storage=self.storage)
         self.tools: dict[str, ToolDefinition] = {}
         self.state = AgentState(
             session_id=self.session_id,
@@ -73,8 +75,36 @@ class ConversationalAgent:
         self._init_system_prompt()
         self.load_history()
         self._register_temporal_tool()
+        self._register_recall_tool()
         if auto_register_tools:
             register_default_tools(self)
+
+    def _register_recall_tool(self) -> None:
+        """Register the built-in cross-session recall tool."""
+        self.register_tool(
+            name="recall_historical_conversations",
+            description=(
+                "Search and recall questions and answers from earlier conversation sessions "
+                "using semantic keywords or topics."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Keywords or topic to search across previous sessions.",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Maximum number of previous exchanges to retrieve (default: 3).",
+                    },
+                },
+                "required": ["query"],
+            },
+            func=lambda query, top_k=3: self.recall_engine.recall_and_format(
+                query=query, current_session_id=self.session_id, top_k=top_k
+            ) or "No relevant questions found from earlier sessions.",
+        )
 
     def _register_temporal_tool(self) -> None:
         """Register the built-in chronological memory retrieval tool."""
@@ -184,6 +214,20 @@ class ConversationalAgent:
                 "role": "system",
                 "content": f"<chronological_memory>\n{mem_context}\n</chronological_memory>",
             })
+
+        # Detect cross-session recall queries and inject historical context if available
+        if self.recall_engine.is_recall_query(user_input):
+            hist_context = self.recall_engine.recall_and_format(
+                query=user_input,
+                current_session_id=self.session_id,
+                top_k=3,
+                reference_time=user_ts,
+            )
+            if hist_context:
+                self.state.messages.append({
+                    "role": "system",
+                    "content": hist_context,
+                })
 
         iteration = 0
         final_response_content = ""
@@ -303,6 +347,20 @@ class ConversationalAgent:
                 "role": "system",
                 "content": f"<chronological_memory>\n{mem_context}\n</chronological_memory>",
             })
+
+        # Detect cross-session recall queries and inject historical context if available
+        if self.recall_engine.is_recall_query(user_input):
+            hist_context = self.recall_engine.recall_and_format(
+                query=user_input,
+                current_session_id=self.session_id,
+                top_k=3,
+                reference_time=stream_user_ts,
+            )
+            if hist_context:
+                self.state.messages.append({
+                    "role": "system",
+                    "content": hist_context,
+                })
 
         accumulated = []
         for delta in self.llm.complete_stream(

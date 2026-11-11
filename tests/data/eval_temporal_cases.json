@@ -1,0 +1,113 @@
+{
+  "temporal_parsing_cases": [
+    {
+      "id": "temp_01",
+      "query": "What did we discuss earlier today?",
+      "is_temporal": true,
+      "expected_label": "earlier today"
+    },
+    {
+      "id": "temp_02",
+      "query": "What was the summary from yesterday?",
+      "is_temporal": true,
+      "expected_label": "yesterday"
+    },
+    {
+      "id": "temp_03",
+      "query": "Show me our chat over the past 3 hours",
+      "is_temporal": true,
+      "expected_label": "past 3 hours"
+    },
+    {
+      "id": "temp_04",
+      "query": "What did I ask in the last 45 minutes?",
+      "is_temporal": true,
+      "expected_label": "past 45 minutes"
+    },
+    {
+      "id": "temp_05",
+      "query": "Review questions from the past week",
+      "is_temporal": true,
+      "expected_label": "past week"
+    },
+    {
+      "id": "temp_06",
+      "query": "List all queries from today",
+      "is_temporal": true,
+      "expected_label": "today"
+    },
+    {
+      "id": "temp_07",
+      "query": "Explain how Dijkstra's algorithm works",
+      "is_temporal": false,
+      "expected_label": null
+    },
+    {
+      "id": "temp_08",
+      "query": "Write a Python script to parse CSV files",
+      "is_temporal": false,
+      "expected_label": null
+    }
+  ],
+  "recall_intent_cases": [
+    {
+      "id": "recall_01",
+      "query": "In our previous conversation, what was the model name we picked?",
+      "is_recall": true,
+      "expected_keywords": ["model", "name", "picked"]
+    },
+    {
+      "id": "recall_02",
+      "query": "What did I ask about Docker multi-stage builds in our last chat?",
+      "is_recall": true,
+      "expected_keywords": ["docker", "multi", "stage", "builds"]
+    },
+    {
+      "id": "recall_03",
+      "query": "Did I mention anything about database indexing earlier?",
+      "is_recall": true,
+      "expected_keywords": ["database", "indexing"]
+    },
+    {
+      "id": "recall_04",
+      "query": "Have we talked about transformers and attention before?",
+      "is_recall": true,
+      "expected_keywords": ["transformers", "attention"]
+    },
+    {
+      "id": "recall_05",
+      "query": "What is the speed of light in vacuum?",
+      "is_recall": false,
+      "expected_keywords": []
+    },
+    {
+      "id": "recall_06",
+      "query": "Compare React and Svelte for web development",
+      "is_recall": false,
+      "expected_keywords": []
+    }
+  ],
+  "grounding_cases": [
+    {
+      "id": "ground_01",
+      "text": "The Mars rover landed in 2021 [^1] and analyzed crater samples [^2].",
+      "available_indices": [1, 2],
+      "expected_valid": [1, 2],
+      "expected_hallucinated": []
+    },
+    {
+      "id": "ground_02",
+      "text": "Voyager reached interstellar space [^1] and detected alien radio signals [^99].",
+      "available_indices": [1],
+      "expected_valid": [1],
+      "expected_hallucinated": [99]
+    },
+    {
+      "id": "ground_03",
+      "text": "Standard factual statement without any citation anchors.",
+      "available_indices": [1, 2],
+      "expected_valid": [],
+      "expected_hallucinated": []
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from minimi.config import Config, get_default_config
 from minimi.llm import LLMGateway, LLMResponse, ToolCall
 from minimi.prompts import get_system_prompt
 from minimi.storage import TemporalStorage
+from minimi.temporal import ChronologicalMemoryRetriever, TemporalParser
 from minimi.tools import register_default_tools
 
 
@@ -63,6 +64,7 @@ class ConversationalAgent:
             default_temperature=self.config.temperature,
         )
         self.storage = storage or TemporalStorage(db_path=self.config.db_path)
+        self.temporal_retriever = ChronologicalMemoryRetriever(storage=self.storage)
         self.tools: dict[str, ToolDefinition] = {}
         self.state = AgentState(
             session_id=self.session_id,
@@ -70,8 +72,32 @@ class ConversationalAgent:
         )
         self._init_system_prompt()
         self.load_history()
+        self._register_temporal_tool()
         if auto_register_tools:
             register_default_tools(self)
+
+    def _register_temporal_tool(self) -> None:
+        """Register the built-in chronological memory retrieval tool."""
+        self.register_tool(
+            name="retrieve_chronological_memory",
+            description=(
+                "Query past conversation history within an explicit relative time window "
+                "(e.g., 'today', 'yesterday', 'last 2 hours', 'past week')."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "time_phrase": {
+                        "type": "string",
+                        "description": "Temporal expression to search (e.g. 'yesterday', 'past 3 hours').",
+                    }
+                },
+                "required": ["time_phrase"],
+            },
+            func=lambda time_phrase: self.temporal_retriever.retrieve_context(
+                time_phrase, conversation_id=self.session_id
+            )[1] or "No memory found for this timeframe.",
+        )
 
     def load_history(self) -> None:
         """Load prior conversation messages from persistent storage into memory."""
@@ -148,6 +174,16 @@ class ConversationalAgent:
             content=user_input,
             timestamp=user_ts,
         )
+
+        # Detect temporal queries and inject chronological memory context if available
+        window, mem_context = self.temporal_retriever.retrieve_context(
+            user_input, conversation_id=self.session_id, reference_time=user_ts
+        )
+        if mem_context and "No previous messages" not in mem_context:
+            self.state.messages.append({
+                "role": "system",
+                "content": f"<chronological_memory>\n{mem_context}\n</chronological_memory>",
+            })
 
         iteration = 0
         final_response_content = ""
@@ -257,6 +293,16 @@ class ConversationalAgent:
             content=user_input,
             timestamp=stream_user_ts,
         )
+
+        # Detect temporal queries and inject chronological memory context if available
+        window, mem_context = self.temporal_retriever.retrieve_context(
+            user_input, conversation_id=self.session_id, reference_time=stream_user_ts
+        )
+        if mem_context and "No previous messages" not in mem_context:
+            self.state.messages.append({
+                "role": "system",
+                "content": f"<chronological_memory>\n{mem_context}\n</chronological_memory>",
+            })
 
         accumulated = []
         for delta in self.llm.complete_stream(

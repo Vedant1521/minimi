@@ -1,13 +1,44 @@
-# Python
+# Node.js & Next.js
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Databases & Local Storage
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.duckdb
+duckdb_history/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# Testing & Coverage
+coverage/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Python (temporary during migration)
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 env/
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -20,32 +51,11 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual Environments
 .venv/
 venv/
 ENV/
 env.bak/
 venv.bak/
-
-# Environment Variables & Secrets
-.env
-.env.*
-!.env.example
-
-# Databases & Local Storage
-*.db
-*.sqlite
-*.sqlite3
-*.duckdb
-duckdb_history/
-
-# Testing & Coverage
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
 
 # IDE & OS
 .vscode/
@@ -56,4 +66,3 @@ Thumbs.db
 # Planning & Project Management
 milestones.md
 plan.md
-

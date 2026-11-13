@@ -274,7 +274,6 @@ minimi/
 ├── .env.example                 # Environment configuration template
 ├── .gitignore                   # Ignore node_modules, .env, data/*.db, .next
 ├── DESIGN.md                    # Exact 1-page system design document
-├── THIRD_PARTY_NOTICES.md       # Upstream provenance & attribution
 ├── package.json                 # npm manifest
 ├── tsconfig.json                # TypeScript configuration
 └── README.md                    # Comprehensive onboarding guide
@@ -296,7 +295,6 @@ Detailed technical architecture, message lifecycles, and trade-off rationales ar
 
 ---
 
-## 14. Upstream Provenance & Licensing
+## 14. License
 
-* **Upstream Provenance**: Architectural patterns and search concepts were inspired by the open-source project **Pravah** by Jay Shah. Full details and modifications are documented in [`THIRD_PARTY_NOTICES.md`](file:///C:/Projects/minimi/assignment/THIRD_PARTY_NOTICES.md).
-* **License**: Licensed under the Apache License, Version 2.0.
+This project is licensed under the Apache License, Version 2.0.
